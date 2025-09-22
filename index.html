@@ -91,8 +91,8 @@
         .tennis-ball {
             width: 16px;
             height: 16px;
-            background: #FFEB3B;
-            border: 2px solid #FFC107;
+            background: radial-gradient(circle at 30% 30%, #FFEB3B, #FFC107);
+            border: 2px solid #FF8F00;
             border-radius: 50%;
             position: absolute;
             cursor: pointer;
@@ -101,10 +101,26 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
-            color: #333;
-            font-size: 8px;
             user-select: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .tennis-ball::before {
+            content: '';
+            position: absolute;
+            width: 12px;
+            height: 1px;
+            background: #FF8F00;
+            border-radius: 1px;
+        }
+        
+        .tennis-ball::after {
+            content: '';
+            position: absolute;
+            width: 1px;
+            height: 12px;
+            background: #FF8F00;
+            border-radius: 1px;
         }
         
         .tennis-ball:hover {
@@ -114,16 +130,24 @@
         }
         
         .tennis-ball.visited {
-            background: #4CAF50;
-            border-color: #388E3C;
-            color: white;
+            background: radial-gradient(circle at 30% 30%, #4CAF50, #388E3C);
+            border-color: #2E7D32;
+        }
+        
+        .tennis-ball.visited::before,
+        .tennis-ball.visited::after {
+            background: #2E7D32;
         }
         
         .tennis-ball.current {
-            background: #FF5722;
-            border-color: #D84315;
-            color: white;
+            background: radial-gradient(circle at 30% 30%, #FF5722, #D84315);
+            border-color: #BF360C;
             animation: pulse 1s infinite;
+        }
+        
+        .tennis-ball.current::before,
+        .tennis-ball.current::after {
+            background: #BF360C;
         }
         
         @keyframes pulse {
@@ -225,7 +249,14 @@
             .tennis-ball {
                 width: 18px;
                 height: 18px;
-                font-size: 9px;
+            }
+            
+            .tennis-ball::before {
+                width: 14px;
+            }
+            
+            .tennis-ball::after {
+                height: 14px;
             }
             
             .game-info {
@@ -511,13 +542,7 @@
                 const ball = document.createElement('div');
                 ball.className = 'tennis-ball';
                 
-                // 对于大量球，只显示前99个的数字，其他显示点
-                if (id <= 99) {
-                    ball.textContent = id;
-                } else {
-                    ball.textContent = '•';
-                }
-                
+                // 不显示编号，只是一个纯粹的网球外观
                 ball.style.left = (x - 8) + 'px';
                 ball.style.top = (y - 8) + 'px';
                 ball.title = `网球 #${id}`;
