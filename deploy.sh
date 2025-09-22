@@ -1,121 +1,255 @@
 #!/bin/bash
 
-# 网球场TSP游戏部署脚本
-# 用于自动化部署到GitHub Pages
+# 网球旅行商问题游戏 - 部署脚本
+# Tennis TSP Game Deployment Script
 
-set -e  # 遇到错误时退出
+echo "🎾 网球旅行商问题游戏 - 自动部署脚本"
+echo "================================================"
 
-echo "🚀 开始部署网球场TSP游戏..."
+# 设置颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# 检查是否在git仓库中
-if [ ! -d ".git" ]; then
-    echo "❌ 错误: 当前目录不是git仓库"
-    echo "请先初始化git仓库: git init"
-    exit 1
-fi
+# 检查必要文件
+echo -e "${BLUE}📋 检查项目文件...${NC}"
+required_files=("index.html" "styles.css" "script.js" "README.md")
+missing_files=()
 
-# 检查必要文件是否存在
-required_files=("index.html" "manifest.json" "sw.js")
 for file in "${required_files[@]}"; do
     if [ ! -f "$file" ]; then
-        echo "❌ 错误: 缺少必要文件 $file"
-        exit 1
+        missing_files+=("$file")
+        echo -e "${RED}❌ 缺少文件: $file${NC}"
+    else
+        echo -e "${GREEN}✅ 找到文件: $file${NC}"
     fi
 done
 
-# 检查icons目录
-if [ ! -d "icons" ]; then
-    echo "⚠️  警告: icons目录不存在，创建中..."
-    mkdir -p icons
-    echo "请手动添加 icon-192.png 和 icon-512.png 到 icons 目录"
-fi
-
-# 获取当前分支
-current_branch=$(git branch --show-current)
-echo "📍 当前分支: $current_branch"
-
-# 检查是否有未提交的更改
-if [ -n "$(git status --porcelain)" ]; then
-    echo "📝 发现未提交的更改，正在提交..."
-    
-    # 添加所有文件
-    git add .
-    
-    # 获取提交信息
-    if [ -n "$1" ]; then
-        commit_message="$1"
-    else
-        commit_message="Deploy: $(date '+%Y-%m-%d %H:%M:%S')"
-    fi
-    
-    git commit -m "$commit_message"
-    echo "✅ 更改已提交: $commit_message"
-else
-    echo "✅ 工作区干净，无需提交"
-fi
-
-# 推送到远程仓库
-echo "📤 推送到远程仓库..."
-
-# 检查是否有远程仓库
-if ! git remote | grep -q "origin"; then
-    echo "❌ 错误: 未找到origin远程仓库"
-    echo "请先添加远程仓库: git remote add origin <repository-url>"
+if [ ${#missing_files[@]} -ne 0 ]; then
+    echo -e "${RED}❌ 部署失败：缺少必要文件${NC}"
     exit 1
 fi
 
-# 推送当前分支
-git push origin $current_branch
+# 创建部署目录
+DEPLOY_DIR="tennis-tsp-game"
+echo -e "${BLUE}📁 创建部署目录: $DEPLOY_DIR${NC}"
 
-echo "✅ 代码已推送到 $current_branch 分支"
-
-# 检查GitHub Pages设置
-echo ""
-echo "🔧 GitHub Pages部署检查清单:"
-echo "1. ✅ 代码已推送到GitHub"
-echo "2. 🔲 进入仓库Settings → Pages"
-echo "3. 🔲 Source选择 'Deploy from a branch'"
-echo "4. 🔲 Branch选择 '$current_branch'"
-echo "5. 🔲 Folder选择 '/ (root)'"
-echo "6. 🔲 点击Save保存设置"
-echo ""
-
-# 获取仓库信息
-remote_url=$(git remote get-url origin)
-if [[ $remote_url == *"github.com"* ]]; then
-    # 提取用户名和仓库名
-    if [[ $remote_url == *".git" ]]; then
-        repo_info=${remote_url%.git}
-    else
-        repo_info=$remote_url
-    fi
-    
-    repo_info=${repo_info##*/}
-    user_info=${remote_url%/*}
-    user_info=${user_info##*/}
-    
-    echo "📍 仓库信息:"
-    echo "   用户名: $user_info"
-    echo "   仓库名: $repo_info"
-    echo ""
-    echo "🌐 预期的GitHub Pages地址:"
-    echo "   https://$user_info.github.io/$repo_info/"
-    echo ""
-    echo "⏰ 部署通常需要几分钟时间，请稍后访问上述地址"
+if [ -d "$DEPLOY_DIR" ]; then
+    echo -e "${YELLOW}⚠️  目录已存在，正在清理...${NC}"
+    rm -rf "$DEPLOY_DIR"
 fi
 
+mkdir -p "$DEPLOY_DIR"
+
+# 复制文件
+echo -e "${BLUE}📄 复制项目文件...${NC}"
+cp index.html "$DEPLOY_DIR/"
+cp styles.css "$DEPLOY_DIR/"
+cp script.js "$DEPLOY_DIR/"
+cp README.md "$DEPLOY_DIR/"
+
+# 创建额外的部署文件
+echo -e "${BLUE}🔧 创建部署配置文件...${NC}"
+
+# 创建 .gitignore
+cat > "$DEPLOY_DIR/.gitignore" << 'EOF'
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.temp
+
+# 备份文件
+*.bak
+*.backup
+EOF
+
+# 创建 package.json (如果需要npm部署)
+cat > "$DEPLOY_DIR/package.json" << 'EOF'
+{
+  "name": "tennis-tsp-game",
+  "version": "1.0.0",
+  "description": "一个基于旅行商问题的互动网球游戏",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8080",
+    "serve": "python3 -m http.server 8080",
+    "dev": "python -m http.server 3000"
+  },
+  "keywords": [
+    "tsp",
+    "traveling-salesman",
+    "game",
+    "algorithm",
+    "tennis",
+    "optimization"
+  ],
+  "author": "Monica Assistant",
+  "license": "MIT",
+  "homepage": "https://github.com/username/tennis-tsp-game",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/username/tennis-tsp-game.git"
+  }
+}
+EOF
+
+# 创建简单的HTTP服务器启动脚本
+cat > "$DEPLOY_DIR/start-server.sh" << 'EOF'
+#!/bin/bash
+echo "🚀 启动网球TSP游戏服务器..."
+echo "📍 访问地址: http://localhost:8080"
+echo "🛑 按 Ctrl+C 停止服务器"
 echo ""
-echo "🎉 部署脚本执行完成！"
+
+# 检查Python版本并启动服务器
+if command -v python3 &> /dev/null; then
+    python3 -m http.server 8080
+elif command -v python &> /dev/null; then
+    python -m http.server 8080
+else
+    echo "❌ 错误: 未找到Python，请安装Python后重试"
+    echo "💡 或者直接用浏览器打开 index.html 文件"
+fi
+EOF
+
+# 创建Windows批处理文件
+cat > "$DEPLOY_DIR/start-server.bat" << 'EOF'
+@echo off
+echo 🎾 启动网球TSP游戏服务器...
+echo 📍 访问地址: http://localhost:8080
+echo 🛑 按 Ctrl+C 停止服务器
+echo.
+
+REM 检查Python并启动服务器
+python --version >nul 2>&1
+if %errorlevel% == 0 (
+    python -m http.server 8080
+) else (
+    echo ❌ 错误: 未找到Python，请安装Python后重试
+    echo 💡 或者直接用浏览器打开 index.html 文件
+    pause
+)
+EOF
+
+# 设置执行权限
+chmod +x "$DEPLOY_DIR/start-server.sh"
+
+# 创建部署说明文件
+cat > "$DEPLOY_DIR/DEPLOY.md" << 'EOF'
+# 部署说明
+
+## 🚀 快速启动
+
+### 方法1: 直接打开
+直接用浏览器打开 `index.html` 文件即可开始游戏。
+
+### 方法2: 本地服务器
+```bash
+# Linux/Mac
+./start-server.sh
+
+# Windows
+start-server.bat
+
+# 手动启动
+python -m http.server 8080
+# 或
+python3 -m http.server 8080
+```
+
+然后访问: http://localhost:8080
+
+## 📦 部署到Web服务器
+
+### GitHub Pages
+1. 将项目上传到GitHub仓库
+2. 在仓库设置中启用GitHub Pages
+3. 选择主分支作为源
+4. 访问生成的GitHub Pages链接
+
+### Netlify
+1. 将整个文件夹拖拽到Netlify部署页面
+2. 或连接GitHub仓库自动部署
+
+### Vercel
+```bash
+npm i -g vercel
+vercel --prod
+```
+
+### 传统Web服务器
+将所有文件上传到Web服务器的根目录或子目录即可。
+
+## 🔧 配置要求
+
+- **浏览器**: 支持ES6+的现代浏览器
+- **服务器**: 任何能提供静态文件的Web服务器
+- **依赖**: 无外部依赖，纯前端项目
+
+## 📱 兼容性
+
+- ✅ Chrome 60+
+- ✅ Firefox 55+
+- ✅ Safari 12+
+- ✅ Edge 79+
+- ✅ 移动端浏览器
+
+## 🛠️ 自定义配置
+
+可以在 `script.js` 中修改以下参数：
+- 默认场地大小
+- 网球数量范围
+- 算法参数
+- 动画速度
+EOF
+
+echo -e "${GREEN}✅ 项目文件复制完成${NC}"
+echo -e "${GREEN}✅ 配置文件创建完成${NC}"
+
+# 显示部署结果
 echo ""
-echo "📋 后续步骤:"
-echo "1. 访问GitHub仓库页面"
-echo "2. 进入Settings → Pages配置GitHub Pages"
-echo "3. 等待部署完成（通常2-10分钟）"
-echo "4. 访问您的游戏网站"
+echo -e "${GREEN}🎉 部署完成！${NC}"
+echo -e "${BLUE}📁 部署目录: $DEPLOY_DIR${NC}"
 echo ""
-echo "🐛 如遇问题:"
-echo "- 检查仓库是否为Public（免费版GitHub Pages要求）"
-echo "- 确认所有文件都已正确上传"
-echo "- 查看GitHub Actions页面的部署日志"
+echo -e "${YELLOW}🚀 启动方法:${NC}"
+echo -e "   1. 直接打开: $DEPLOY_DIR/index.html"
+echo -e "   2. 本地服务器: cd $DEPLOY_DIR && ./start-server.sh"
+echo -e "   3. Windows: cd $DEPLOY_DIR && start-server.bat"
 echo ""
-echo "✨ 祝您游戏开发顺利！"
+echo -e "${BLUE}📖 更多部署选项请查看: $DEPLOY_DIR/DEPLOY.md${NC}"
+
+# 询问是否立即启动
+echo ""
+read -p "是否立即启动本地服务器？(y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo -e "${GREEN}🚀 启动服务器...${NC}"
+    cd "$DEPLOY_DIR"
+    echo -e "${BLUE}📍 访问地址: http://localhost:8080${NC}"
+    echo -e "${YELLOW}🛑 按 Ctrl+C 停止服务器${NC}"
+    echo ""
+    
+    if command -v python3 &> /dev/null; then
+        python3 -m http.server 8080
+    elif command -v python &> /dev/null; then
+        python -m http.server 8080
+    else
+        echo -e "${RED}❌ 未找到Python，请手动打开 index.html${NC}"
+    fi
+fi
+
+echo -e "${GREEN}✨ 感谢使用网球旅行商问题游戏！${NC}"
