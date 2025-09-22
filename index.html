@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🎾 网球场TSP数据采集游戏</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <style>
+        .tennis-ball {
+            transition: all 0.2s ease;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .tennis-ball:hover {
+            transform: scale(1.1);
+        }
+        .tennis-ball:active {
+            transform: scale(0.95);
+        }
+        .path-line {
+            pointer-events: none;
+        }
+        .game-field {
+            background: linear-gradient(45deg, #10b981 0%, #059669 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        .game-field::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px),
+                linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        @media (max-width: 640px) {
+            .tennis-ball {
+                min-width: 44px;
+                min-height: 44px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+        const { createClient } = supabase;
+
+        // Supabase 配置 (请替换为您的实际配置)
+        const SUPABASE_URL = 'your-supabase-url';
+        const SUPABASE_ANON_KEY = 'your-supabase-anon-key';
+        
+        // 如果配置了Supabase，创建客户端
+        let supabaseClient = null;
+        if (SUPABASE_URL !== 'your-supabase-url' && SUPABASE_ANON_KEY !== 'your-supabase-anon-key') {
+            supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        }
+
+        // 工具函数
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        
+        const calculateDistance = (p1, p2) => {
+            return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+        };
+
+        const generateRandomBalls = (count, width, height) => {
+            const balls = [];
+            const margin = 30;
+            for (let i = 0; i < count; i++) {
+                balls.push({
+                    id: i,
+                    x: margin + Math.random() * (width - 2 * margin),
+                    y: margin + Math.random() * (height - 2 * margin),
+                    clicked: false,
+                    order: null
+                });
+            }
+            return balls;
+        };
+
+        // 主游戏组件
+        const TennisGame = () => {
+            const [gameState, setGameState] = useState('setup'); // setup, playing, finished
+            const [balls, setBalls] = useState([]);
+            const [clickSequence, setClickSequence] = useState([]);
+            const [totalDistance, setTotalDistance] = useState(0);
+            const [gameStartTime, setGameStartTime] = useState(null);
+            const [gameDuration, setGameDuration] = useState(0);
+            const [playerInfo, setPlayerInfo] = useState({
+                name: '',
+                age: '',
+                gender: '',
+                education: ''
+            });
+            const [settings, setSettings] = useState({
+                ballCount: 8,
+                fieldWidth: 600,
+                fieldHeight: 400
+            });
+            
+            const gameFieldRef = useRef(null);
+            const [fieldDimensions, setFieldDimensions] = useState({ width: 600, height: 400 });
+
+            // 响应式调整游戏区域大小
+            useEffect(() => {
+                const updateDimensions = () => {
+                    if (gameFieldRef.current) {
+                        const container = gameFieldRef.current.parentElement;
+                        const containerWidth = container.clientWidth - 32; // 减去padding
+                        const maxWidth = Math.min(containerWidth, 800);
+                        const height = Math.min(maxWidth * 0.6, 500);
+                        
+                        setFieldDimensions({ width: maxWidth, height });
+                        setSettings(prev => ({ ...prev, fieldWidth: maxWidth, fieldHeight: height }));
+                    }
+                };
+
+                updateDimensions();
+                window.addEventListener('resize', updateDimensions);
+                return () => window.removeEventListener('resize', updateDimensions);
+            }, []);
+
+            // 开始游戏
+            const startGame = () => {
+                if (!playerInfo.name.trim()) {
+                    alert('请输入您的姓名');
+                    return;
+                }
+                
+                const newBalls = generateRandomBalls(
+                    settings.ballCount, 
+                    fieldDimensions.width, 
+                    fieldDimensions.height
+                );
+                setBalls(newBalls);
+                setClickSequence([]);
+                setTotalDistance(0);
+                setGameStartTime(Date.now());
+                setGameState('playing');
+            };
+
+            // 点击网球
+            const handleBallClick = (ballId) => {
+                if (gameState !== 'playing') return;
+
+                setBalls(prev => prev.map(ball => {
+                    if (ball.id === ballId && !ball.clicked) {
+                        const newOrder = clickSequence.length + 1;
+                        return { ...ball, clicked: true, order: newOrder };
+                    }
+                    return ball;
+                }));
+
+                setClickSequence(prev => {
+                    const newSequence = [...prev, { ballId, timestamp: Date.now() - gameStartTime }];
+                    
+                    // 计算总距离
+                    if (newSequence.length > 1) {
+                        const currentBall = balls.find(b => b.id === ballId);
+                        const previousBall = balls.find(b => b.id === newSequence[newSequence.length - 2].ballId);
+                        const distance = calculateDistance(previousBall, currentBall);
+                        setTotalDistance(prev => prev + distance);
+                    }
+
+                    // 检查是否完成
+                    if (newSequence.length === balls.length) {
+                        setGameDuration(Date.now() - gameStartTime);
+                        setGameState('finished');
+                    }
+
+                    return newSequence;
+                });
+
+                // 触觉反馈
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            };
+
+            // 提交数据
+            const submitData = async () => {
+                const gameData = {
+                    player_id: generateId(),
+                    player_name: playerInfo.name,
+                    player_age: parseInt(playerInfo.age) || null,
+                    player_gender: playerInfo.gender || null,
+                    player_education: playerInfo.education || null,
+                    ball_count: settings.ballCount,
+                    field_width: fieldDimensions.width,
+                    field_height: fieldDimensions.height,
+                    click_sequence: clickSequence,
+                    total_distance: Math.round(totalDistance * 100) / 100,
+                    game_duration: gameDuration,
+                    user_agent: navigator.userAgent,
+                    screen_width: screen.width,
+                    screen_height: screen.height,
+                    device_pixel_ratio: window.devicePixelRatio
+                };
+
+                try {
+                    if (supabaseClient) {
+                        const { error } = await supabaseClient
+                            .from('tsp_game_results')
+                            .insert([gameData]);
+                        
+                        if (error) throw error;
+                        alert('数据提交成功！感谢您的参与！');
+                    } else {
+                        // 本地存储
+                        const localData = JSON.parse(localStorage.getItem('tsp_game_data') || '[]');
+                        localData.push({ ...gameData, created_at: new Date().toISOString() });
+                        localStorage.setItem('tsp_game_data', JSON.stringify(localData));
+                        alert('数据已保存到本地！');
+                    }
+                } catch (error) {
+                    console.error('提交数据失败:', error);
+                    alert('数据提交失败，已保存到本地');
+                    
+                    // 备用本地存储
+                    const localData = JSON.parse(localStorage.getItem('tsp_game_data') || '[]');
+                    localData.push({ ...gameData, created_at: new Date().toISOString() });
+                    localStorage.setItem('tsp_game_data', JSON.stringify(localData));
+                }
+            };
+
+            // 重新开始
+            const resetGame = () => {
+                setGameState('setup');
+                setBalls([]);
+                setClickSequence([]);
+                setTotalDistance(0);
+                setGameDuration(0);
+            };
+
+            // 渲染路径线条
+            const renderPathLines = () => {
+                const lines = [];
+                for (let i = 1; i < clickSequence.length; i++) {
+                    const prevBall = balls.find(b => b.id === clickSequence[i-1].ballId);
+                    const currBall = balls.find(b => b.id === clickSequence[i].ballId);
+                    if (prevBall && currBall) {
+                        lines.push(
+                            <line
+                                key={`line-${i}`}
+                                x1={prevBall.x}
+                                y1={prevBall.y}
+                                x2={currBall.x}
+                                y2={currBall.y}
+                                stroke="#ef4444"
+                                strokeWidth="3"
+                                className="path-line"
+                            />
+                        );
+                    }
+                }
+                return lines;
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-400 to-purple-600 p-4">
+                    <div className="max-w-4xl mx-auto">
+                        <h1 className="text-3xl font-bold text-white text-center mb-6">
+                            🎾 网球场TSP数据采集游戏
+                        </h1>
+
+                        {gameState === 'setup' && (
+                            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                                <h2 className="text-xl font-semibold mb-4">游戏设置</h2>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">姓名 *</label>
+                                        <input
+                                            type="text"
+                                            value={playerInfo.name}
+                                            onChange={(e) => setPlayerInfo(prev => ({...prev, name: e.target.value}))}
+                                            className="w-full p-2 border rounded-lg"
+                                            placeholder="请输入您的姓名"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">年龄</label>
+                                        <input
+                                            type="number"
+                                            value={playerInfo.age}
+                                            onChange={(e) => setPlayerInfo(prev => ({...prev, age: e.target.value}))}
+                                            className="w-full p-2 border rounded-lg"
+                                            placeholder="可选"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">性别</label>
+                                        <select
+                                            value={playerInfo.gender}
+                                            onChange={(e) => setPlayerInfo(prev => ({...prev, gender: e.target.value}))}
+                                            className="w-full p-2 border rounded-lg"
+                                        >
+                                            <option value="">请选择</option>
+                                            <option value="male">男</option>
+                                            <option value="female">女</option>
+                                            <option value="other">其他</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">教育程度</label>
+                                        <select
+                                            value={playerInfo.education}
+                                            onChange={(e) => setPlayerInfo(prev => ({...prev, education: e.target.value}))}
+                                            className="w-full p-2 border rounded-lg"
+                                        >
+                                            <option value="">请选择</option>
+                                            <option value="high_school">高中及以下</option>
+                                            <option value="bachelor">本科</option>
+                                            <option value="master">硕士</option>
+                                            <option value="phd">博士</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium mb-2">
+                                        网球数量: {settings.ballCount}
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="5"
+                                        max="15"
+                                        value={settings.ballCount}
+                                        onChange={(e) => setSettings(prev => ({...prev, ballCount: parseInt(e.target.value)}))}
+                                        className="w-full"
+                                    />
+                                </div>
+
+                                <div className="bg-blue-50 p-4 rounded-lg mb-6">
+                                    <h3 className="font-semibold mb-2">🎯 游戏规则</h3>
+                                    <ul className="text-sm space-y-1">
+                                        <li>• 点击所有网球，找到最短的访问路径</li>
+                                        <li>• 每个网球只能点击一次</li>
+                                        <li>• 红线显示您的路径</li>
+                                        <li>• 尽量让总路径长度最短</li>
+                                    </ul>
+                                </div>
+
+                                <button
+                                    onClick={startGame}
+                                    className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                                >
+                                    开始游戏 🚀
+                                </button>
+                            </div>
+                        )}
+
+                        {gameState === 'playing' && (
+                            <div className="space-y-4">
+                                <div className="bg-white rounded-lg shadow-lg p-4">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span>进度: {clickSequence.length}/{balls.length}</span>
+                                        <span>路径长度: {Math.round(totalDistance)}</span>
+                                        <span>用时: {Math.round((Date.now() - gameStartTime) / 1000)}s</span>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-lg shadow-lg p-4">
+                                    <div
+                                        ref={gameFieldRef}
+                                        className="game-field rounded-lg mx-auto relative"
+                                        style={{
+                                            width: fieldDimensions.width,
+                                            height: fieldDimensions.height
+                                        }}
+                                    >
+                                        <svg
+                                            className="absolute inset-0 w-full h-full"
+                                            style={{ pointerEvents: 'none' }}
+                                        >
+                                            {renderPathLines()}
+                                        </svg>
+                                        
+                                        {balls.map(ball => (
+                                            <div
+                                                key={ball.id}
+                                                className={`tennis-ball absolute flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-white font-bold text-sm transform -translate-x-1/2 -translate-y-1/2 ${
+                                                    ball.clicked 
+                                                        ? 'bg-red-500 shadow-lg' 
+                                                        : 'bg-yellow-400 hover:bg-yellow-500 shadow-md'
+                                                }`}
+                                                style={{
+                                                    left: ball.x,
+                                                    top: ball.y,
+                                                    minWidth: '44px',
+                                                    minHeight: '44px'
+                                                }}
+                                                onClick={() => handleBallClick(ball.id)}
+                                            >
+                                                {ball.clicked ? ball.order : '🎾'}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {gameState === 'finished' && (
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h2 className="text-2xl font-bold text-center mb-4">🎉 游戏完成！</h2>
+                                
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                    <div className="text-center">
+                                        <div className="text-2xl font-bold text-blue-600">{balls.length}</div>
+                                        <div className="text-sm text-gray-600">网球数量</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-2xl font-bold text-green-600">{Math.round(totalDistance)}</div>
+                                        <div className="text-sm text-gray-600">路径长度</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-2xl font-bold text-purple-600">{Math.round(gameDuration / 1000)}</div>
+                                        <div className="text-sm text-gray-600">用时(秒)</div>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className="text-2xl font-bold text-orange-600">{Math.round(totalDistance / (gameDuration / 1000))}</div>
+                                        <div className="text-sm text-gray-600">效率</div>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row gap-4">
+                                    <button
+                                        onClick={submitData}
+                                        className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                                    >
+                                        提交数据 📊
+                                    </button>
+                                    <button
+                                        onClick={resetGame}
+                                        className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                                    >
+                                        再玩一次 🔄
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // 渲染应用
+        ReactDOM.render(<TennisGame />, document.getElementById('root'));
+
+        // 注册 Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => console.log('SW registered'))
+                    .catch(error => console.log('SW registration failed'));
+            });
+        }
+    </script>
+</body>
+</html>
